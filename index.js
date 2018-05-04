@@ -1,18 +1,18 @@
 'use strict';
 
 const EventEmitter = require('events');
-const ws = require('ws');
+const WebSocketServer = require('ws').Server;
 const crypto = require('crypto');
 
 class HixieClient extends EventEmitter {
     constructor(request, socket, head) {
+	super();
 	this._socket = socket;
-	this._parent = parent;
 	socket.setTimeout(0);
 	socket.setNoDelay(true);
 	const NONCE_LENGTH = 8;
-	const key1 = req.headers['sec-websocket-key1'];
-	const key2 = req.headers['sec-websocket-key2'];
+	const key1 = request.headers['sec-websocket-key1'];
+	const key2 = request.headers['sec-websocket-key2'];
 	const nonce = head.slice(0, NONCE_LENGTH);
 	const processKey = function(key) {
 	    const n = parseInt(key.replace(/[^\d]/g, ''));
@@ -23,16 +23,16 @@ class HixieClient extends EventEmitter {
 	    }
 	    return n / spaces;
 	}
-	var answer = new Buffer(4 * 2 + NONCE_LENGTH);
-	answer.writeInt32BE(processKey(key1), 0);
-	answer.writeInt32BE(processKey(key2), 4);
+	var answer = Buffer.alloc(4 * 2 + NONCE_LENGTH);
+	answer.writeUInt32BE(processKey(key1), 0);
+	answer.writeUInt32BE(processKey(key2), 4);
 	nonce.copy(answer, 8);
 	var headers = [
 	    'HTTP/1.1 101 WebSocket Protocol Handshake',
 	    'Upgrade: WebSocket',
             'Connection: Upgrade',
-	    'Sec-WebSocket-Origin: ' + req.headers['origin'],
-	    'Sec-WebSocket-Location: ws://' + req.headers.host + req.url,
+	    'Sec-WebSocket-Origin: ' + request.headers['origin'],
+	    'Sec-WebSocket-Location: ws://' + request.headers.host + request.url,
 	    '',''
 	];
 	var headerBuffer = new Buffer(headers.join('\r\n'));
@@ -51,7 +51,7 @@ class HixieClient extends EventEmitter {
 	    } else {
 		this.emit('error', err, this);
 	    }
-	});
+	}.bind(this));
     };
     send(message) {
 	if (this._socket) {
@@ -73,37 +73,39 @@ class HixieClient extends EventEmitter {
 
 class WsPlusHixie extends EventEmitter {
     constructor(httpServer, options) {
+	super();
 	if (!options)
 	    options = {};
 	options.noServer = true;
 	this._httpServer = httpServer;
 	this._hixieClients = [];
-	this._ws = new ws.WebSocketServer(options);
+	this._ws = new WebSocketServer(options);
 	httpServer.on('upgrade', (request, socket, head) => {
 	    if (request && request.headers && request.headers['sec-websocket-key1']) {
-		new HixieClient(request, socket, head);
-		HixieClient.on('connection',client => {
+		new HixieClient(request, socket, head).on('connection',client => {
 		    this._hixieClients.push(client);
-		    console.log("Connected [" + this._hixieClients.length + "]");
+		    console.log("Hixie-Connected [" + this._hixieClients.length + "]");
 		}).on('error', (err, client) => {
 		    console.log("Error: " + err);
 		}).on('close', client => {
 		    this._hixieClients = this._hixieClients.filter( e => e !== client );
-		    console.log("Disconnected [" + this._hixieClients.length + "]");
+		    console.log("Hixie-Disconnected [" + this._hixieClients.length + "]");
 		});
 	    } else {
-		this._ws.handleUpgrade(request, socket, head);
+		this._ws.handleUpgrade(request, socket, head, client => {
+		    console.log("Ws-Connected");
+		});
 	    }
 	});
     }
     send(message) {
+	const bufferMessage = new Buffer(message);
 	this._hixieClients.forEach(c => {
-	    c.send(message);
+	    c.send(bufferMessage);
 	});
 	this._ws.clients.forEach(c => {
 	    c.send(message);
 	});
     }
 }
-
 module.exports.WsPlusHixie = WsPlusHixie;
