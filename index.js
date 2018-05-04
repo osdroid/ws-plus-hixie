@@ -108,4 +108,4 @@ class WsPlusHixie extends EventEmitter {
 	});
     }
 }
-module.exports.WsPlusHixie = WsPlusHixie;
+module.exports = WsPlusHixie;
